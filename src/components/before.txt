@@ -1,0 +1,202 @@
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
+
+// Register chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+function AirQualityChart() {
+  const [data, setData] = useState([]);
+  const [chartData, setChartData] = useState(null);
+
+  useEffect(() => {
+    axios
+      .get("http://127.0.0.1:5000/get_data") // Flask API URL
+      .then((response) => {
+        setData(response.data);
+      })
+      .catch((error) => console.error(error));
+  }, []);
+
+  useEffect(() => {
+    if (data.length > 0) {
+      const timestamps = data.map((item) => item.timestamp);
+      const pm25Values = data.map((item) => item.pm25);
+
+      setChartData({
+        labels: timestamps,
+        datasets: [
+          {
+            label: "PM2.5 Levels",
+            data: pm25Values,
+            borderColor: "rgba(75, 192, 192, 1)",
+            fill: false,
+          },
+        ],
+      });
+    }
+  }, [data]);
+
+  return (
+    <div>
+      <h2>Air Quality - PM2.5 Levels</h2>
+      {chartData ? <Line data={chartData} /> : <p>Loading data...</p>}
+    </div>
+  );
+}
+
+export default AirQualityChart;
+
+
+
+
+================================================================
+from flask import Flask, jsonify, request
+from flask_mysqldb import MySQL
+import pandas as pd
+import os
+from werkzeug.utils import secure_filename
+import traceback
+from flask_cors import CORS
+import numpy as np
+
+app = Flask(__name__)
+
+# MySQL Database Configuration
+app.config['MYSQL_HOST'] = 'localhost'
+app.config['MYSQL_USER'] = 'root'
+app.config['MYSQL_PASSWORD'] = ''  
+app.config['MYSQL_DB'] = 'air_quality'
+
+mysql = MySQL(app)
+CORS(app)
+
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+@app.route('/get_data', methods=['GET'])
+def get_data():
+    try:
+        cur = mysql.connection.cursor()
+        cur.execute("SELECT * FROM air_quality_data")
+        data = cur.fetchall()
+
+        results = []
+        for row in data:
+            results.append({
+                'timestamp': row[0],
+                'temperature': row[1],
+                'humidity': row[2],
+                'pm25': row[3],
+                'pm10': row[4],
+                'co2': row[5],
+                'co': row[6],
+                'voc': row[7],
+                'air_quality': row[8]
+            })
+
+        cur.close()
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/upload_data', methods=['POST'])
+def upload_data():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+
+        print(f"Received file: {file.filename}")  
+
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+
+        df = pd.read_excel(filepath)
+
+        # Clean column names
+        df.columns = df.columns.str.replace('Â°C', '°C') \
+                               .str.replace('Âµg/mÂ³', 'µg/m³') \
+                               .str.strip()  
+
+        print(f"Cleaned column names: {df.columns}")
+
+        # Verify required columns
+        required_columns = ['Timestamp', 'Suhu (°C)', 'Kelembapan (%)', 'PM2.5 (µg/m³)', 'PM10 (µg/m³)', 'CO2 (ppm)', 'CO (ppm)', 'VOC (ppb)', 'baik']
+        if not all(col in df.columns for col in required_columns):
+            return jsonify({"error": "Missing required columns in the file"}), 400
+
+        # Drop the 'baik' column entirely if you no longer need it
+        df = df.drop(columns=['baik'])
+
+        # Make sure the remaining columns are processed correctly
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df['Suhu (°C)'] = pd.to_numeric(df['Suhu (°C)'], errors='coerce')
+        df['Kelembapan (%)'] = pd.to_numeric(df['Kelembapan (%)'], errors='coerce')
+        df['PM2.5 (µg/m³)'] = pd.to_numeric(df['PM2.5 (µg/m³)'], errors='coerce')
+        df['PM10 (µg/m³)'] = pd.to_numeric(df['PM10 (µg/m³)'], errors='coerce')
+        df['CO2 (ppm)'] = pd.to_numeric(df['CO2 (ppm)'], errors='coerce')
+        df['CO (ppm)'] = pd.to_numeric(df['CO (ppm)'], errors='coerce')
+        df['VOC (ppb)'] = pd.to_numeric(df['VOC (ppb)'], errors='coerce')
+
+        # Replace NaN values with None (NULL in MySQL)
+        df = df.where(pd.notnull(df), None)
+
+        print(f"Rows to insert: {len(df)}")
+
+        # Insert into MySQL
+        cur = mysql.connection.cursor()
+        mysql.connection.begin()
+
+        for index, row in df.iterrows():
+            try:
+                print(f"Inserting row {index}: {row.to_dict()}")
+                cur.execute("""
+                    INSERT INTO air_quality_data (timestamp, temperature, humidity, pm25, pm10, co2, co, voc)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    row['Timestamp'], row['Suhu (°C)'], row['Kelembapan (%)'], row['PM2.5 (µg/m³)'],
+                    row['PM10 (µg/m³)'], row['CO2 (ppm)'], row['CO (ppm)'], row['VOC (ppb)']
+                ))
+
+            except Exception as e:
+                print(f"Error inserting row {index}: {e}")
+                continue  # Skip problematic rows
+
+        mysql.connection.commit()
+        cur.close()
+
+        return jsonify({"message": "Data uploaded successfully"}), 200
+
+    except Exception as e:
+        error_details = traceback.format_exc()
+        print(f"Error: {error_details}")
+        mysql.connection.rollback()
+        return jsonify({"error": "Error uploading file", "details": error_details}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
