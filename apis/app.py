@@ -22,14 +22,57 @@ UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Fuzzy Logic function to determine air quality based on PM2.5 value
+# Fuzzy Logic function to determine air quality based on PM2.5 value with threshold
 def get_air_quality(pm25):
-    if pm25 < 50:
+    # Fuzzy Logic algorithm
+    if pm25 < 0:
+        return "Invalid"
+    elif pm25 < 50:
         return "Baik"
     elif 50 <= pm25 < 100:
         return "Sedang"
-    else:
+    elif 100 <= pm25 < 300:
         return "Buruk"
+    elif 300 <= pm25 < 500:
+        return "Sangat Buruk"
+    else:
+        return "Berbahaya"
+
+def get_threshold_air_quality(pm25):
+    # Threshold-based algorithm
+    if pm25 < 50:
+        return "Good"
+    elif 50 <= pm25 < 100:
+        return "Moderate"
+    elif pm25 >= 100:
+        return "Poor"
+    return "Invalid"
+
+@app.route('/fuzzy_and_threshold_air_quality', methods=['GET'])
+def fuzzy_and_threshold_air_quality():
+    try:
+        cur = mysql.connection.cursor()
+        cur.execute("SELECT * FROM air_quality_data")
+        data = cur.fetchall()
+
+        results = []
+        for row in data:
+            pm25 = row[3]
+            fuzzy_quality = get_air_quality(pm25)
+            threshold_quality = get_threshold_air_quality(pm25)
+
+            results.append({
+                'timestamp': row[0],
+                'pm25': pm25,
+                'fuzzy_quality': fuzzy_quality,
+                'threshold_quality': threshold_quality
+            })
+
+        cur.close()
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/get_data', methods=['GET'])
 def get_data():
@@ -40,12 +83,14 @@ def get_data():
 
         results = []
         for row in data:
+            pm25 = row[3]
+            fuzzy_quality = get_air_quality(pm25)
             results.append({
                 'timestamp': row[0],
                 'temperature': row[1],
                 'humidity': row[2],
-                'pm25': row[3],
-                'air_quality': row[4]
+                'pm25': pm25,
+                'air_quality': fuzzy_quality  # Include fuzzy air quality
             })
 
         cur.close()
@@ -131,22 +176,32 @@ def upload_data():
 def fuzzy_air_quality():
     try:
         pm25 = float(request.args.get('pm25'))
-        
+
+        # Threshold: Nilai PM2.5 harus dalam batas wajar
+        if pm25 < 0 or pm25 > 500:
+            return jsonify({"error": "PM2.5 harus antara 0 - 500"}), 400
+
+        # Membership functions with threshold
         def membership_baik(pm25):
             return max(0, min(1, (50 - pm25) / 50))
-        
+
         def membership_sedang(pm25):
             return max(0, min((pm25 - 50) / 50, (100 - pm25) / 50))
-        
+
         def membership_buruk(pm25):
-            return max(0, min(1, (pm25 - 100) / 50))
-        
+            return max(0, min((pm25 - 100) / 200, (300 - pm25) / 200))
+
+        def membership_sangat_buruk(pm25):
+            return max(0, min((pm25 - 300) / 200, (500 - pm25) / 200))
+
         fuzzy_result = {
             "Baik": membership_baik(pm25),
             "Sedang": membership_sedang(pm25),
-            "Buruk": membership_buruk(pm25)
+            "Buruk": membership_buruk(pm25),
+            "Sangat Buruk": membership_sangat_buruk(pm25)
         }
         return jsonify(fuzzy_result)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
