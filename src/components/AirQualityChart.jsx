@@ -12,7 +12,7 @@ import {
   Legend,
 } from "chart.js";
 
-// Register chart.js components
+// Register Chart.js components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -23,31 +23,43 @@ ChartJS.register(
   Legend
 );
 
-function AirQualityChart() {
+const AirQualityChart = () => {
   const [data, setData] = useState([]);
-  const [chartData, setChartData] = useState(null);
   const [fuzzyResult, setFuzzyResult] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get("http://127.0.0.1:5000/get_data").then((response) => {
-      setData(response.data);
-      if (response.data.length > 0) {
-        const lastPm25 = response.data[response.data.length - 1].PM25;
-        axios
-          .get(`http://127.0.0.1:5000/fuzzy_air_quality?pm25=${lastPm25}`)
-          .then((res) => setFuzzyResult(res.data))
-          .catch((error) => console.error("Error fetching fuzzy data", error));
-      }
-    });
+    // Fetch data from the API
+    axios
+      .get("http://127.0.0.1:5000/get_data")
+      .then((response) => {
+        const newData = response.data;
+        setData(newData);
+
+        // Assuming fuzzy logic result is part of the response
+        if (newData.length > 0 && newData[0].fuzzyResult) {
+          const currentFuzzyResult = newData[0].fuzzyResult;
+          setFuzzyResult(currentFuzzyResult);
+        }
+      })
+      .catch((error) => console.error("Error fetching data:", error))
+      .finally(() => setLoading(false));
   }, []);
 
-  const charttData = {
-    labels: data.map((entry) => entry.Timestamp),
+  // Create chart data dynamically based on the fetched data
+  const chartData = {
+    labels: data.map((item) => item.timestamp),
     datasets: [
       {
         label: "PM2.5 Levels",
-        data: data.map((entry) => entry.PM25),
-        borderColor: "blue",
+        data: data.map((item) => item.pm25),
+        borderColor: "rgba(75, 192, 192, 1)",
+        fill: false,
+      },
+      {
+        label: "Threshold Algorithm - PM2.5",
+        data: data.map((item) => item.pm25),
+        borderColor: "rgba(255, 99, 132, 1)",
         fill: false,
       },
     ],
@@ -66,93 +78,29 @@ function AirQualityChart() {
     }
   };
 
-  useEffect(() => {
-    if (data.length > 0) {
-      const timestamps = data.map((item) => item.timestamp);
-      const pm25Values = data.map((item) => item.pm25);
-
-      setChartData({
-        labels: timestamps,
-        datasets: [
-          {
-            label: "PM2.5 Levels",
-            data: pm25Values,
-            borderColor: "rgba(75, 192, 192, 1)",
-            fill: false,
-          },
-        ],
-      });
-
-      // Ambil nilai PM2.5 terbaru untuk fuzzy logic
-      const latestPM25 = pm25Values[pm25Values.length - 1];
-
-      axios
-        .get(`http://127.0.0.1:5000/fuzzy_air_quality?pm25=${latestPM25}`)
-        .then((response) => {
-          setFuzzyResult(response.data);
-        })
-        .catch((error) => console.error(error));
-    }
-  }, [data]);
-
   return (
-    <div>
-      <h2>Air Quality - PM2.5 Levels</h2>
-      {chartData ? <Line data={chartData} /> : <p>Loading data...</p>}
+    <div className="mb-6">
+      <h2 className="text-xl font-semibold mb-2">
+        Air Quality Analysis - Fuzzy vs Threshold Algorithms
+      </h2>
+      {loading ? <p>Loading data...</p> : <Line data={chartData} />}
 
-      {fuzzyResult ? (
-        <div
-          style={{
-            marginTop: "20px",
-            padding: "10px",
-            border: "1px solid #ddd",
-            borderRadius: "5px",
-          }}
-        >
-          <h3>Kualitas Udara Fuzzy Logic</h3>
-          <p>
-            <strong>Baik:</strong> {fuzzyResult.Baik}
+      {fuzzyResult && (
+        <div className="mt-4 p-4 border rounded-md bg-gray-100">
+          <h3 className="font-semibold">Kualitas Udara Fuzzy Logic</h3>
+          <p style={{ color: getFuzzyColor("Baik") }}>
+            <strong>Baik:</strong> {(fuzzyResult.Baik * 100).toFixed(2)}%
           </p>
-          <p>
-            <strong>Sedang:</strong> {fuzzyResult.Sedang}
+          <p style={{ color: getFuzzyColor("Sedang") }}>
+            <strong>Sedang:</strong> {(fuzzyResult.Sedang * 100).toFixed(2)}%
           </p>
-          <p>
-            <strong>Buruk:</strong> {fuzzyResult.Buruk}
+          <p style={{ color: getFuzzyColor("Buruk") }}>
+            <strong>Buruk:</strong> {(fuzzyResult.Buruk * 100).toFixed(2)}%
           </p>
         </div>
-      ) : (
-        <p>Memproses data fuzzy...</p>
       )}
-      <div>
-        <h2>Grafik Kualitas Udara (PM2.5)</h2>
-        <Line data={charttData} />
-
-        {fuzzyResult ? (
-          <div
-            style={{
-              marginTop: "20px",
-              padding: "10px",
-              border: "1px solid #ddd",
-              borderRadius: "5px",
-            }}
-          >
-            <h3>Kualitas Udara Fuzzy Logic</h3>
-            <p style={{ color: getFuzzyColor("Baik") }}>
-              <strong>Baik:</strong> {(fuzzyResult.Baik * 100).toFixed(2)}%
-            </p>
-            <p style={{ color: getFuzzyColor("Sedang") }}>
-              <strong>Sedang:</strong> {(fuzzyResult.Sedang * 100).toFixed(2)}%
-            </p>
-            <p style={{ color: getFuzzyColor("Buruk") }}>
-              <strong>Buruk:</strong> {(fuzzyResult.Buruk * 100).toFixed(2)}%
-            </p>
-          </div>
-        ) : (
-          <p>Memproses data fuzzy...</p>
-        )}
-      </div>
     </div>
   );
-}
+};
 
 export default AirQualityChart;
