@@ -28,10 +28,13 @@ const App = () => {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen w-screen overflow-hidden">
+      {/* Sidebar dengan width tetap agar tidak mempengaruhi layout */}
       <Sidebar setActivePage={setActivePage} />
-      <div className="flex-1 container mx-auto p-4 overflow-y-auto">
-        <h1 className="text-3xl font-bold mb-4">Air Quality Dashboard</h1>
+
+      {/* Konten utama dengan layout responsif */}
+      <div className="flex-1 flex flex-col w-full overflow-hidden p-4">
+        <h1 className="text-3xl font-bold mb-4">Air Quality</h1>
         {activePage === "dashboard" && (
           <>
             <FileUpload
@@ -42,7 +45,11 @@ const App = () => {
             <AirQualityTable data={data} loading={loading} />
           </>
         )}
-        {activePage === "analytics" && <AirQualityChart />}
+        {activePage === "analytics" && (
+          <div className="w-full h-full overflow-auto">
+            <AirQualityChart />
+          </div>
+        )}
       </div>
     </div>
   );
