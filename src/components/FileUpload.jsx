@@ -46,7 +46,7 @@ const FileUpload = ({ onDataUploaded, loading, error }) => {
       <button
         onClick={handleFileUpload}
         disabled={loading}
-        className="ml-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+        className="ml-4 bg-blue-500 text-black px-4 py-2 rounded hover:bg-blue-600"
       >
         {loading ? "Uploading..." : "Upload"}
       </button>
