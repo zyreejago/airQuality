@@ -7,28 +7,30 @@ const AirQualityTable = ({ data, loading }) => {
       {loading ? (
         <p>Loading data...</p>
       ) : data.length > 0 ? (
-        <table className="table-auto w-full border-collapse border border-gray-300">
-          <thead>
-            <tr className="bg-gray-200">
-              <th className="px-4 py-2">Timestamp</th>
-              <th className="px-4 py-2">Suhu (°C)</th>
-              <th className="px-4 py-2">Kelembapan (%)</th>
-              <th className="px-4 py-2">PM2.5 (µg/m³)</th>
-              <th className="px-4 py-2">Status Kualitas Udara</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, index) => (
-              <tr key={index} className="border-b">
-                <td className="px-4 py-2">{row.timestamp}</td>
-                <td className="px-4 py-2">{row.temperature}</td>
-                <td className="px-4 py-2">{row.humidity}</td>
-                <td className="px-4 py-2">{row.PM25}</td>
-                <td className="px-4 py-2">{row.air_quality}</td>
+        <div className="overflow-y-auto max-h-96 border border-gray-300 rounded-md">
+          <table className="table-auto w-full border-collapse">
+            <thead className="sticky top-0 bg-gray-200">
+              <tr>
+                <th className="px-4 py-2 border">Timestamp</th>
+                <th className="px-4 py-2 border">Suhu (°C)</th>
+                <th className="px-4 py-2 border">Kelembapan (%)</th>
+                <th className="px-4 py-2 border">PM2.5 (µg/m³)</th>
+                <th className="px-4 py-2 border">Status Kualitas Udara</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.map((row, index) => (
+                <tr key={index} className="border-b">
+                  <td className="px-4 py-2 border">{row.timestamp}</td>
+                  <td className="px-4 py-2 border">{row.temperature}</td>
+                  <td className="px-4 py-2 border">{row.humidity}</td>
+                  <td className="px-4 py-2 border">{row.pm25}</td>
+                  <td className="px-4 py-2 border">{row.air_quality}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p>No data available</p>
       )}
