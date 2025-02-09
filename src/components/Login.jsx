@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom"; // Ganti useHistory dengan useNavigate
+import { useNavigate } from "react-router-dom";
 
-const Login = ({ setIsAuthenticated }) => {
+const Login = ({ setIsAuthenticated, fetchData }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const navigate = useNavigate(); // Menggunakan useNavigate
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -15,16 +15,18 @@ const Login = ({ setIsAuthenticated }) => {
         username,
         password,
       });
+
       localStorage.setItem("token", response.data.access_token);
       setIsAuthenticated(true);
-      navigate("/dashboard"); // Ganti history.push dengan navigate
+      await fetchData();
+      navigate("/dashboard");
     } catch (error) {
       setError("Invalid credentials");
     }
   };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
+    <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-lg">
         <h2 className="text-3xl font-semibold text-center mb-6">Login</h2>
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
@@ -35,7 +37,7 @@ const Login = ({ setIsAuthenticated }) => {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-3 border border-gray-300 rounded-md"
             />
           </div>
           <div className="mb-6">
@@ -44,22 +46,25 @@ const Login = ({ setIsAuthenticated }) => {
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-3 border border-gray-300 rounded-md"
             />
           </div>
           <button
             type="submit"
-            className="w-full p-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full p-3 bg-black-600 text-black rounded-md"
           >
             Login
           </button>
         </form>
         <div className="mt-4 text-center">
-          <p className="text-gray-600">
+          <p>
             Belum punya akun?{" "}
-            <a href="/register" className="text-blue-600 hover:underline">
+            <span
+              onClick={() => navigate("/register")}
+              className="text-blue-600 hover:underline cursor-pointer"
+            >
               Daftar disini
-            </a>
+            </span>
           </p>
         </div>
       </div>
