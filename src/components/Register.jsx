@@ -1,21 +1,21 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom"; // Menggunakan useNavigate
+import { useNavigate } from "react-router-dom";
 
 const Register = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const navigate = useNavigate(); // Menggunakan useNavigate
+  const navigate = useNavigate();
 
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post("http://127.0.0.1:5000/register", {
+      await axios.post("http://127.0.0.1:5000/register", {
         username,
         password,
       });
-      navigate("/login"); // Ganti history.push dengan navigate
+      navigate("/login"); // Pindah ke halaman login setelah registrasi berhasil
     } catch (error) {
       setError("Username already exists");
     }
@@ -33,7 +33,7 @@ const Register = () => {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-3 border border-gray-300 rounded-md"
             />
           </div>
           <div className="mb-6">
@@ -42,22 +42,25 @@ const Register = () => {
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-3 border border-gray-300 rounded-md"
             />
           </div>
           <button
             type="submit"
-            className="w-full p-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full p-3 bg-blue-600 text-black rounded-md"
           >
             Register
           </button>
         </form>
         <div className="mt-4 text-center">
-          <p className="text-gray-600">
+          <p>
             Sudah punya akun?{" "}
-            <a href="/login" className="text-blue-600 hover:underline">
+            <span
+              onClick={() => navigate("/login")}
+              className="text-blue-600 hover:underline cursor-pointer"
+            >
               Login disini
-            </a>
+            </span>
           </p>
         </div>
       </div>
