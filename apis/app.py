@@ -6,6 +6,8 @@ from werkzeug.utils import secure_filename
 import traceback
 from flask_cors import CORS
 import numpy as np
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 
 app = Flask(__name__)
 
@@ -17,17 +19,53 @@ app.config['MYSQL_DB'] = 'air_quality'
 
 mysql = MySQL(app)
 CORS(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+
+app.config['SECRET_KEY'] = os.urandom(24)
+@app.route('/register', methods=['POST'])
+def register():
+    username = request.json.get('username')
+    password = request.json.get('password')
+
+    # Cek apakah username sudah ada
+    cursor = mysql.connection.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+    if user:
+        return jsonify({"message": "Username already exists"}), 400
+
+    # Enkripsi password dan simpan ke DB
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_password))
+    mysql.connection.commit()
+
+    return jsonify({"message": "User registered successfully"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.json.get('username')
+    password = request.json.get('password')
+
+    cursor = mysql.connection.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+
+    if user and bcrypt.check_password_hash(user[2], password):
+        access_token = create_access_token(identity=username)
+        return jsonify(access_token=access_token), 200
+    else:
+        return jsonify({"message": "Invalid credentials"}), 401
+
 
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Fuzzy Logic function to determine air quality based on PM2.5 value with threshold
-def get_air_quality(pm25):
-    # Fuzzy Logic algorithm
-    if pm25 < 0:
-        return "Invalid"
-    elif pm25 < 50:
+
+# Fuzzy Logic Functions for Multiple Parameters (threshold included)
+def fuzzy_pm25(pm25):
+    if pm25 < 50:
         return "Baik"
     elif 50 <= pm25 < 100:
         return "Sedang"
@@ -38,41 +76,71 @@ def get_air_quality(pm25):
     else:
         return "Berbahaya"
 
-def get_threshold_air_quality(pm25):
-    # Threshold-based algorithm
-    if pm25 < 50:
-        return "Good"
-    elif 50 <= pm25 < 100:
-        return "Moderate"
-    elif pm25 >= 100:
-        return "Poor"
-    return "Invalid"
+def fuzzy_pm10(pm10):
+    if pm10 < 50:
+        return "Baik"
+    elif 50 <= pm10 < 100:
+        return "Sedang"
+    elif 100 <= pm10 < 300:
+        return "Buruk"
+    elif 300 <= pm10 < 500:
+        return "Sangat Buruk"
+    else:
+        return "Berbahaya"
 
-@app.route('/fuzzy_and_threshold_air_quality', methods=['GET'])
-def fuzzy_and_threshold_air_quality():
-    try:
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM air_quality_data")
-        data = cur.fetchall()
+def fuzzy_co2(co2):
+    if co2 < 600:
+        return "Baik"
+    elif 600 <= co2 < 1000:
+        return "Sedang"
+    elif 1000 <= co2 < 2000:
+        return "Buruk"
+    else:
+        return "Sangat Buruk"
 
-        results = []
-        for row in data:
-            pm25 = row[3]
-            fuzzy_quality = get_air_quality(pm25)
-            threshold_quality = get_threshold_air_quality(pm25)
+def fuzzy_co(co):
+    if co < 4:
+        return "Baik"
+    elif 4 <= co < 9:
+        return "Sedang"
+    elif 9 <= co < 15:
+        return "Buruk"
+    else:
+        return "Sangat Buruk"
 
-            results.append({
-                'timestamp': row[0],
-                'pm25': pm25,
-                'fuzzy_quality': fuzzy_quality,
-                'threshold_quality': threshold_quality
-            })
+def fuzzy_voc(voc):
+    if voc < 250:
+        return "Baik"
+    elif 250 <= voc < 500:
+        return "Sedang"
+    elif 500 <= voc < 1000:
+        return "Buruk"
+    else:
+        return "Sangat Buruk"
 
-        cur.close()
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+def determine_air_quality(pm25, pm10, co2, co, voc):
+    results = [fuzzy_pm25(pm25), fuzzy_pm10(pm10), fuzzy_co2(co2), fuzzy_co(co), fuzzy_voc(voc)]
+    
+    if "Berbahaya" in results:
+        return "Berbahaya"
+    elif "Sangat Buruk" in results:
+        return "Sangat Buruk"
+    elif "Buruk" in results:
+        return "Buruk"
+    elif "Sedang" in results:
+        return "Sedang"
+    else:
+        return "Baik"
 
+# Fungsi untuk mendapatkan threshold untuk setiap parameter
+def get_threshold(pm25, pm10, co2, co, voc):
+    return {
+        'pm25': fuzzy_pm25(pm25),
+        'pm10': fuzzy_pm10(pm10),
+        'co2': fuzzy_co2(co2),
+        'co': fuzzy_co(co),
+        'voc': fuzzy_voc(voc)
+    }
 
 @app.route('/get_data', methods=['GET'])
 def get_data():
@@ -83,14 +151,20 @@ def get_data():
 
         results = []
         for row in data:
-            pm25 = row[3]
-            fuzzy_quality = get_air_quality(pm25)
+            air_quality = determine_air_quality(row[3], row[5], row[6], row[7], row[8])
+            thresholds = get_threshold(row[4], row[5], row[6], row[7], row[8])  # Mengambil threshold untuk tiap parameter
             results.append({
-                'timestamp': row[0],
-                'temperature': row[1],
-                'humidity': row[2],
-                'pm25': pm25,
-                'air_quality': fuzzy_quality  # Include fuzzy air quality
+                'id': row[0],
+                'timestamp': row[1],
+                'temperature': row[2],
+                'humidity': row[3],
+                'pm25': row[4],
+                'pm10': row[5],
+                'co2': row[6],
+                'co': row[7],
+                'voc': row[8],
+                'air_quality': air_quality,
+                'thresholds': thresholds  # Menambahkan threshold untuk masing-masing parameter
             })
 
         cur.close()
@@ -120,15 +194,11 @@ def upload_data():
                                .str.replace('Âµg/mÂ³', 'µg/m³') \
                                .str.strip()
 
-        # Verify required columns
-        required_columns = ['Timestamp', 'Suhu (°C)', 'Kelembapan (%)', 'PM2.5 (µg/m³)', 'PM10 (µg/m³)', 'CO2 (ppm)', 'CO (ppm)', 'VOC (ppb)', 'baik']
+        required_columns = ['Timestamp', 'Suhu (°C)', 'Kelembapan (%)', 'PM2.5 (µg/m³)', 'PM10 (µg/m³)', 'CO2 (ppm)', 'CO (ppm)', 'VOC (ppb)']
         if not all(col in df.columns for col in required_columns):
             return jsonify({"error": "Missing required columns in the file"}), 400
 
-        # Drop the 'baik' column entirely if you no longer need it
-        df = df.drop(columns=['baik'])
-
-        # Process the columns properly
+        # Process the columns
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
         df['Suhu (°C)'] = pd.to_numeric(df['Suhu (°C)'], errors='coerce')
         df['Kelembapan (%)'] = pd.to_numeric(df['Kelembapan (%)'], errors='coerce')
@@ -138,29 +208,27 @@ def upload_data():
         df['CO (ppm)'] = pd.to_numeric(df['CO (ppm)'], errors='coerce')
         df['VOC (ppb)'] = pd.to_numeric(df['VOC (ppb)'], errors='coerce')
 
-        # Apply fuzzy logic to determine air quality based on PM2.5 values
-        df['air_quality'] = df['PM2.5 (µg/m³)'].apply(get_air_quality)
+        # Apply air quality determination with thresholds
+        df['air_quality'] = df.apply(lambda row: determine_air_quality(row['PM2.5 (µg/m³)'], row['PM10 (µg/m³)'], row['CO2 (ppm)'], row['CO (ppm)'], row['VOC (ppb)']), axis=1)
+        df['thresholds'] = df.apply(lambda row: get_threshold(row['PM2.5 (µg/m³)'], row['PM10 (µg/m³)'], row['CO2 (ppm)'], row['CO (ppm)'], row['VOC (ppb)']), axis=1)
 
-        # Replace NaN values with None (NULL in MySQL)
         df = df.where(pd.notnull(df), None)
 
-        # Insert into MySQL
         cur = mysql.connection.cursor()
         mysql.connection.begin()
 
         for index, row in df.iterrows():
             try:
                 cur.execute("""
-                    INSERT INTO air_quality_data (timestamp, temperature, humidity, pm25, pm10, co2, co, voc, air_quality)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO air_quality_data (timestamp, temperature, humidity, pm25, pm10, co2, co, voc, air_quality, thresholds)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     row['Timestamp'], row['Suhu (°C)'], row['Kelembapan (%)'], row['PM2.5 (µg/m³)'],
-                    row['PM10 (µg/m³)'], row['CO2 (ppm)'], row['CO (ppm)'], row['VOC (ppb)'], row['air_quality']
+                    row['PM10 (µg/m³)'], row['CO2 (ppm)'], row['CO (ppm)'], row['VOC (ppb)'], row['air_quality'], str(row['thresholds'])
                 ))
-
             except Exception as e:
                 print(f"Error inserting row {index}: {e}")
-                continue  # Skip problematic rows
+                continue
 
         mysql.connection.commit()
         cur.close()
@@ -172,38 +240,6 @@ def upload_data():
         mysql.connection.rollback()
         return jsonify({"error": "Error uploading file", "details": error_details}), 500
 
-@app.route('/fuzzy_air_quality', methods=['GET'])
-def fuzzy_air_quality():
-    try:
-        pm25 = float(request.args.get('pm25'))
-
-        # Threshold: Nilai PM2.5 harus dalam batas wajar
-        if pm25 < 0 or pm25 > 500:
-            return jsonify({"error": "PM2.5 harus antara 0 - 500"}), 400
-
-        # Membership functions with threshold
-        def membership_baik(pm25):
-            return max(0, min(1, (50 - pm25) / 50))
-
-        def membership_sedang(pm25):
-            return max(0, min((pm25 - 50) / 50, (100 - pm25) / 50))
-
-        def membership_buruk(pm25):
-            return max(0, min((pm25 - 100) / 200, (300 - pm25) / 200))
-
-        def membership_sangat_buruk(pm25):
-            return max(0, min((pm25 - 300) / 200, (500 - pm25) / 200))
-
-        fuzzy_result = {
-            "Baik": membership_baik(pm25),
-            "Sedang": membership_sedang(pm25),
-            "Buruk": membership_buruk(pm25),
-            "Sangat Buruk": membership_sangat_buruk(pm25)
-        }
-        return jsonify(fuzzy_result)
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
